@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>DarkScanner — UI</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/style.css" rel="stylesheet">
+</head>
+<body class="bg-dark text-light">
+<div class="container-fluid vh-100 d-flex flex-column p-2">
+
+  <!-- Banner: Metasploit-like -->
+  <header class="app-banner d-flex align-items-center p-3 mb-2">
+    <div class="banner-left me-3">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L3 5v6c0 5 3.8 9.7 9 11 5.2-1.3 9-6 9-11V5l-9-3z" fill="currentColor" opacity="0.12"/>
+        <path d="M12 2L3 5v6c0 5 3.8 9.7 9 11 5.2-1.3 9-6 9-11V5l-9-3z" stroke="currentColor" stroke-width="0.8" fill="none"/>
+        <path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5-5-2.2-5-5z" fill="currentColor"/>
+      </svg>
+    </div>
+    <div class="banner-main">
+      <h1 class="banner-title mb-0">DarkScanner <small class="version">v0.1</small></h1>
+      <p class="banner-sub small mb-0 text-muted">Metasploit‑style interface — Tarama, SQLi orchestration & job yönetimi</p>
+    </div>
+    <div class="ms-auto banner-actions text-end">
+      <span class="badge bg-dark text-warning" id="modeBadge">Dev Mode</span>
+    </div>
+  </header>
+
+  <div class="row flex-grow-1 mt-2">
+    <!-- Left panel: controls -->
+    <div class="col-3 panel-left p-2">
+      <div class="card bg-secondary text-light">
+        <div class="card-body p-2">
+          <h6>New Scan</h6>
+          <div class="mb-2">
+            <label class="form-label small">Target (URL or host)</label>
+            <input id="target" class="form-control form-control-sm" placeholder="example.com or http://example.com/page?id=1">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Ports</label>
+            <input id="ports" class="form-control form-control-sm" placeholder="80,443 or 1-1024 (empty = common)">
+          </div>
+          <div class="mb-2 d-flex gap-1">
+            <input id="timeout" class="form-control form-control-sm" placeholder="timeout (s)" value="1.0">
+            <input id="workers" class="form-control form-control-sm" placeholder="threads" value="50">
+          </div>
+          <div class="d-grid">
+            <button id="startbtn" class="btn btn-warning btn-sm">Start Scan</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card bg-secondary text-light mt-2">
+        <div class="card-body p-2">
+          <h6>Jobs</h6>
+          <ul id="joblist" class="list-group list-group-flush small"></ul>
+        </div>
+      </div>
+
+      <div class="card bg-secondary text-light mt-2">
+        <div class="card-body p-2 small">
+          <h6>Quick Actions</h6>
+          <button id="refreshJobs" class="btn btn-sm btn-outline-light">Refresh Jobs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: terminal/log -->
+    <div class="col-6 panel-center p-2 d-flex flex-column">
+      <div class="card bg-black text-light flex-grow-1">
+        <div class="card-body p-2 d-flex flex-column">
+          <div class="d-flex justify-content-between">
+            <strong>Terminal</strong>
+            <div class="small text-muted">Job: <span id="currentJob">No job</span> • <span id="jobStatus">idle</span></div>
+          </div>
+          <pre id="terminal" class="flex-grow-1 mt-2 mb-0 mono p-2 bg-dark text-light overflow-auto"></pre>
+          <div class="mt-2">
+            <small class="text-muted">Tip: Start a scan and watch terminal output stream here.</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: details -->
+    <div class="col-3 panel-right p-2">
+      <div class="card bg-secondary text-light p-2">
+        <h6>Selected Job</h6>
+        <div id="jobDetail" class="small">
+          <p class="text-muted">No job selected.</p>
+        </div>
+        <div id="downloadArea" class="mt-2"></div>
+      </div>
+
+      <div class="card bg-secondary text-light p-2 mt-2">
+        <h6>Open ports (live)</h6>
+        <ul id="openPorts" class="list-group list-group-flush small"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-2">
+    <div class="col text-center text-muted small">Use only on authorized targets. Scanning may be disruptive.</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let selectedJob = null;
+function refreshJobs(){
+  fetch('/api/jobs').then(r=>r.json()).then(j=>{
+    const list = document.getElementById('joblist');
+    list.innerHTML = '';
+    j.jobs.forEach(job=>{
+      const li = document.createElement('li');
+      li.className = 'list-group-item list-group-item-action bg-secondary text-light small d-flex justify-content-between align-items-center';
+      li.textContent = job.target + ' ';
+      const badge = document.createElement('span');
+      badge.className = 'badge bg-dark text-warning';
+      badge.textContent = job.status + (job.open_count?(' • '+job.open_count):'');
+      li.appendChild(badge);
+      li.onclick = ()=> selectJob(job.id);
+      list.appendChild(li);
+    });
+  });
+}
+function selectJob(id){
+  selectedJob = id;
+  document.getElementById('currentJob').textContent = id;
+  updateJobStatus();
+  document.getElementById('terminal').textContent = '';
+}
+function updateJobStatus(){
+  if(!selectedJob) return;
+  fetch('/api/status/'+selectedJob).then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    const job = d.job;
+    document.getElementById('jobStatus').textContent = job.status || 'idle';
+    document.getElementById('currentJob').textContent = job.target || selectedJob;
+    // details
+    const jd = document.getElementById('jobDetail');
+    jd.innerHTML = '<b>'+job.target+'</b><br><small>IP: '+(job.ip||'n/a')+'</small><br>Status: '+job.status+'<br>Elapsed: '+(job.elapsed||0).toFixed(2)+'s';
+    // download link
+    const dl = document.getElementById('downloadArea');
+    dl.innerHTML = '';
+    if(job.status === 'done'){
+      const a = document.createElement('a');
+      a.href = '/api/download/'+selectedJob;
+      a.className = 'btn btn-sm btn-outline-light';
+      a.textContent = 'Download CSV';
+      dl.appendChild(a);
+    }
+    // open ports
+    const openList = document.getElementById('openPorts');
+    openList.innerHTML = '';
+    job.open.slice(0,20).forEach(o=>{
+      const li = document.createElement('li');
+      li.className = 'list-group-item bg-dark text-light small';
+      li.textContent = o.port + ' • ' + (o.banner||'');
+      openList.appendChild(li);
+    });
+    // terminal log
+    fetch('/api/log/'+selectedJob).then(r=>r.json()).then(d=>{
+      if(!d.ok) return;
+      const t = document.getElementById('terminal');
+      t.textContent = d.lines.join('\n');
+      t.scrollTop = t.scrollHeight;
+    });
+  });
+}
+
+document.getElementById('startbtn').onclick = ()=>{
+  const target = document.getElementById('target').value.trim();
+  const ports = document.getElementById('ports').value.trim();
+  const timeout = document.getElementById('timeout').value||1.0;
+  const workers = document.getElementById('workers').value||50;
+  fetch('/api/start', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({target, ports, timeout, workers})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok){
+      refreshJobs();
+      selectJob(d.job_id);
+    } else {
+      alert('Error: '+(d.error||'unknown'));
+    }
+  });
+};
+
+document.getElementById('refreshJobs').onclick = refreshJobs;
+setInterval(()=>{ document.getElementById('modeBadge').textContent = 'Dev Mode'; },1000);
+setInterval(()=>{ if(selectedJob) updateJobStatus(); refreshJobs(); }, 2000);
+
+window.onload = ()=>{
+  refreshJobs();
+};
+</script>
+</body>
+</html>
